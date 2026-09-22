@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../theme/app_theme.dart';
 
@@ -395,7 +394,7 @@ class SectionLabel extends StatelessWidget {
             style: context.texts.labelSmall?.copyWith(color: p.inkFaint, letterSpacing: 1.1),
           ),
           const Spacer(),
-          if (trailing != null) trailing!,
+          ?trailing,
         ],
       ),
     );

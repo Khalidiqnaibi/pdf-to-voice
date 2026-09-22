@@ -10,13 +10,15 @@ import 'services/library_store.dart';
 import 'services/settings_store.dart';
 import 'services/tts_service.dart';
 
+bool get _isDesktop => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   MediaKit.ensureInitialized();
   pdfrxFlutterInitialize();
 
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+  if (_isDesktop) {
     await windowManager.ensureInitialized();
     await windowManager.waitUntilReadyToShow(
       const WindowOptions(
@@ -24,7 +26,6 @@ Future<void> main() async {
         minimumSize: Size(880, 620),
         center: true,
         title: 'Lumen Reader',
-        titleBarStyle: TitleBarStyle.normal,
       ),
       () async {
         await windowManager.show();
@@ -39,14 +40,33 @@ Future<void> main() async {
 
   // Bring the engine up in the background: the library is usable immediately and
   // Kokoro is usually warm by the time a document is open.
-  unawaitedStart(tts, settings);
+  final config = settings.engineConfig;
+  if (config.isComplete) {
+    tts.start(config);
+  }
+
+  if (_isDesktop) {
+    await windowManager.setPreventClose(true);
+    windowManager.addListener(_ShutdownHandler(tts));
+  }
 
   runApp(LumenApp(settings: settings, library: library, tts: tts));
 }
 
-void unawaitedStart(TtsService tts, SettingsStore settings) {
-  final config = settings.engineConfig;
-  if (config.isComplete) {
-    tts.start(config);
+/// Stops the Kokoro sidecar before the window goes away, so the model is not
+/// left resident in a stranded Python process.
+class _ShutdownHandler extends WindowListener {
+  _ShutdownHandler(this.tts);
+
+  final TtsService tts;
+  bool _closing = false;
+
+  @override
+  void onWindowClose() async {
+    if (_closing) return;
+    _closing = true;
+    tts.dispose();
+    await windowManager.setPreventClose(false);
+    await windowManager.close();
   }
 }

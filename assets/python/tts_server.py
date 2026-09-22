@@ -183,6 +183,26 @@ class Handler(BaseHTTPRequestHandler):
             self._json(500, {"error": str(exc)})
 
 
+def _watch_parent(server):
+    """Exit when the app goes away.
+
+    The parent holds our stdin open for as long as it lives. If it closes or
+    crashes we read EOF here and shut down, so a 325 MB model is never left
+    resident after the window is gone.
+    """
+
+    def run():
+        try:
+            while sys.stdin.readline():
+                pass
+        except Exception:
+            pass
+        _log("parent closed stdin; shutting down")
+        server.shutdown()
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
@@ -205,6 +225,8 @@ def main() -> int:
     Handler.engine = engine
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     port = server.server_address[1]
+
+    _watch_parent(server)
 
     print(
         "LUMEN_READY "

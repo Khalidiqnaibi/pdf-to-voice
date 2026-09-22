@@ -56,11 +56,11 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   }
 
   Future<void> _pick(TextEditingController target, List<String> extensions) async {
-    final result = await FilePicker.platform.pickFiles(
+    final picked = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: extensions,
     );
-    final path = result?.files.single.path;
+    final path = picked?.path;
     if (path != null) setState(() => target.text = path);
   }
 
@@ -396,8 +396,6 @@ class _ThemeSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = context.lumen;
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(

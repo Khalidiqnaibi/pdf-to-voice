@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 /// One spoken unit: a sentence, plus the boxes to light up on the page while it
@@ -35,7 +36,7 @@ class NarrationScript {
   NarrationScript(this.sentences, this.pageCount)
     : _firstOnPage = _buildPageIndex(sentences, pageCount);
 
-  static const empty = _emptyScript;
+  static final empty = NarrationScript(const <Sentence>[], 0);
 
   final List<Sentence> sentences;
   final int pageCount;
@@ -74,7 +75,6 @@ class NarrationScript {
   }
 }
 
-final _emptyScript = NarrationScript(const <Sentence>[], 0);
 
 /// Progress report while a document is being prepared for narration.
 class ScriptProgress {
@@ -102,6 +102,19 @@ class ScriptBuilder {
 
   bool _cancelled = false;
   void cancel() => _cancelled = true;
+
+  /// Runs the text pipeline without a PDF: normalise, split, filter.
+  ///
+  /// Exposed so the segmentation rules can be tested against raw pdfium-style
+  /// text (hard line breaks, hyphenation, ligatures) without a document.
+  @visibleForTesting
+  List<String> segment(String rawPageText) {
+    final normalized = _normalize(rawPageText);
+    return _splitIntoSentences(normalized.text)
+        .map((r) => normalized.text.substring(r.start, r.end).trim())
+        .where(_isWorthSpeaking)
+        .toList();
+  }
 
   Future<NarrationScript> build(
     PdfDocument document, {
@@ -225,7 +238,7 @@ class ScriptBuilder {
     '“': '"',
     '”': '"',
     '–': '-',
-    '—': ' - ',
+    '—': '-',
   };
 
   static bool _startsLineBreak(String s, int from) {
@@ -324,7 +337,19 @@ class ScriptBuilder {
     if (word.length == 1 && _isUpper(word.codeUnitAt(0))) return false; // initial
     if (_abbreviations.contains(word.toLowerCase())) return false;
 
+    // A number that is the whole segment so far is a list marker ("1. Load
+    // the file"), not the end of a sentence. A number at the end of a real
+    // sentence ("...was 1999.") has words in front of it and still breaks.
+    if (text.substring(start, dot).trim() == word && _isAllDigits(word)) return false;
+
     return true;
+  }
+
+  static bool _isAllDigits(String value) {
+    for (var i = 0; i < value.length; i++) {
+      if (!_isDigit(value.codeUnitAt(i))) return false;
+    }
+    return value.isNotEmpty;
   }
 
   static String _wordBefore(String text, int dot, int limit) {

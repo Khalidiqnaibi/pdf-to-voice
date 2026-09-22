@@ -107,7 +107,7 @@ class SettingsStore extends ChangeNotifier {
       '${Directory.current.path}${sep}models',
       if (home.isNotEmpty) ...[
         '$home${sep}Documents${sep}GitHub${sep}A.S.H${sep}models',
-        '$home${sep}.kokoro',
+        '$home$sep.kokoro',
         '$home${sep}models',
         '$home${sep}Downloads',
       ],

@@ -102,7 +102,7 @@ class TtsService extends ChangeNotifier {
       _cacheDir ??= await _ensureCacheDir();
       final script = await _materializeScript();
 
-      final process = await Process.start(config.pythonPath, [
+      final args = [
         script.path,
         '--model',
         config.modelPath,
@@ -110,7 +110,17 @@ class TtsService extends ChangeNotifier {
         config.voicesPath,
         '--port',
         '0',
-      ], runInShell: Platform.isWindows);
+      ];
+
+      // Spawn without a shell so our stdin pipe reaches Python directly: the
+      // sidecar watches it for EOF and exits when this app does. Only fall back
+      // to a shell if the interpreter cannot be resolved on PATH.
+      Process process;
+      try {
+        process = await Process.start(config.pythonPath, args);
+      } on ProcessException {
+        process = await Process.start(config.pythonPath, args, runInShell: true);
+      }
       _process = process;
 
       final ready = Completer<Map<String, dynamic>>();
@@ -264,10 +274,11 @@ class TtsService extends ChangeNotifier {
     return completer.future;
   }
 
-  /// Fire-and-forget render used to stay ahead of playback.
+  /// Fire-and-forget render used to stay ahead of playback. Failures are
+  /// ignored here; whoever actually needs the clip will surface the error.
   void prefetch(String text, String voice, {int priority = 50}) {
     if (!isReady || isRendered(text, voice)) return;
-    clip(text, voice, priority: priority).catchError((Object _) => Clip(_fileFor(''), Duration.zero));
+    clip(text, voice, priority: priority).then((_) {}, onError: (Object _) {});
   }
 
   /// Drops queued prefetch work, e.g. after the user changes voice.
@@ -407,6 +418,10 @@ class TtsService extends ChangeNotifier {
             .timeout(const Duration(seconds: 2));
       } catch (_) {}
     }
+    try {
+      // Closing stdin trips the sidecar's parent watchdog; kill is the backstop.
+      await process.stdin.close();
+    } catch (_) {}
     try {
       process.kill();
     } catch (_) {}

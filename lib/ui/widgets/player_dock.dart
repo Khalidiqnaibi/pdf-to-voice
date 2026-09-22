@@ -254,7 +254,7 @@ class _SentenceStrip extends StatelessWidget {
           ),
           if (narrator.isRendering) ...[
             const SizedBox(width: 12),
-            _RenderingBadge(tts: null),
+            const _RenderingBadge(),
           ],
         ],
       ),
@@ -263,9 +263,7 @@ class _SentenceStrip extends StatelessWidget {
 }
 
 class _RenderingBadge extends StatelessWidget {
-  const _RenderingBadge({required this.tts});
-
-  final TtsService? tts;
+  const _RenderingBadge();
 
   @override
   Widget build(BuildContext context) {

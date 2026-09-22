@@ -30,12 +30,6 @@ class _SpeedChipState extends State<SpeedChip> {
   final _controller = MenuController();
 
   @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final p = context.lumen;
 
