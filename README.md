@@ -27,12 +27,9 @@ sentence, highlighting the page as it goes.
 |---|---|
 | Flutter | 3.47+ with Windows desktop support |
 | Python | 3.9+ on `PATH`, with `pip install kokoro-onnx` |
-| Kokoro weights | `kokoro-v1.0.onnx` (325 MB) and `voices-v1.0.bin` |
 
-Get the weights from the
-[kokoro-onnx releases](https://github.com/thewh1teagle/kokoro-onnx/releases).
-Lumen probes `<app>/models`, `./models`, `~/.kokoro`, `~/models` and `~/Downloads`
-on first launch; anything it cannot find you can point at in **Settings**.
+The Kokoro weights are **bundled into the build** — see below. Python is still an
+external dependency.
 
 ### Windows Developer Mode
 
@@ -45,10 +42,49 @@ start ms-settings:developers
 
 ## Running
 
+The model files are too large for git, so fetch them once:
+
+```bash
+pwsh tool/fetch_models.ps1
+```
+
+Then:
+
 ```bash
 flutter pub get
 flutter run -d windows
 ```
+
+## Bundled models
+
+`windows/CMakeLists.txt` copies everything in `models/` into the application
+bundle, so the built app carries its own voice:
+
+```
+build/windows/x64/runner/Release/
+  lumen_reader.exe
+  models/
+    kokoro-v1.0.onnx     325 MB
+    voices-v1.0.bin       28 MB
+  data/flutter_assets/
+```
+
+Zip that folder and the app speaks on any machine with Python — nothing to
+download, nothing to point at. At startup Lumen probes `<app>/models` first, then
+`<app>/data/models`, `./models`, `~/.kokoro`, `~/models`, `~/Downloads`, and falls
+back to whatever is set in **Settings**. That probe re-runs on every launch and
+whenever a saved path has gone missing, so the bundled copy is picked up even for
+someone whose settings still name an older location.
+
+CMake skips files that are already up to date, so the 325 MB model is copied once
+rather than on every incremental build. To bundle from somewhere else:
+
+```bash
+cmake -DLUMEN_MODELS_DIR=<path>
+```
+
+If `models/` is empty the build still succeeds, with a warning; narration stays
+offline until a model is chosen in Settings.
 
 ## Keyboard
 
@@ -106,4 +142,8 @@ flutter test
 - Multi-column layouts follow pdfium's reading order, which is usually but not
   always correct.
 - Windows only so far. The code is platform-neutral apart from the sidecar launch;
-  macOS and Linux need `media_kit_libs_<os>_audio` added to `pubspec.yaml`.
+  macOS and Linux need `media_kit_libs_<os>_audio` added to `pubspec.yaml`, and an
+  equivalent model-copy rule in their own CMake/Xcode bundle step.
+- **Python is not bundled.** The models ship with the app, but the target machine
+  still needs Python with `kokoro-onnx` installed. Shipping an embedded Python
+  runtime alongside the models would close that gap, at roughly +150 MB.

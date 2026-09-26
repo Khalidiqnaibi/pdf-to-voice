@@ -74,20 +74,33 @@ class SettingsStore extends ChangeNotifier {
 
   static String _defaultPython() => Platform.isWindows ? 'python' : 'python3';
 
-  /// On first launch, look in the usual places for the Kokoro weights so most
-  /// people never see the setup sheet at all.
+  /// Finds the Kokoro weights so the setup sheet is something people opt into
+  /// rather than something they have to get past.
+  ///
+  /// This runs on every launch, not just the first, and re-probes whenever a
+  /// stored path points at a file that is no longer there. That way a build
+  /// which ships the model beside the executable is picked up automatically,
+  /// even for someone whose settings still name an older location.
   Future<void> _seedEnginePaths() async {
     if (_prefs.getString(_kPython) == null) {
       await _prefs.setString(_kPython, _defaultPython());
     }
 
-    final needsModel = (_prefs.getString(_kModel) ?? '').isEmpty;
-    final needsVoices = (_prefs.getString(_kVoicesFile) ?? '').isEmpty;
+    final needsModel = !_isUsable(_kModel);
+    final needsVoices = !_isUsable(_kVoicesFile);
     if (!needsModel && !needsVoices) return;
 
     for (final dir in _candidateModelDirs()) {
-      final model = _firstExisting(dir, const ['kokoro-v1.0.onnx', 'kokoro-v1.0.fp16.onnx', 'kokoro.onnx']);
-      final voices = _firstExisting(dir, const ['voices-v1.0.bin', 'voices.bin', 'voices.json']);
+      final model = _firstExisting(dir, const [
+        'kokoro-v1.0.onnx',
+        'kokoro-v1.0.fp16.onnx',
+        'kokoro.onnx',
+      ]);
+      final voices = _firstExisting(dir, const [
+        'voices-v1.0.bin',
+        'voices.bin',
+        'voices.json',
+      ]);
       if (model != null && voices != null) {
         if (needsModel) await _prefs.setString(_kModel, model);
         if (needsVoices) await _prefs.setString(_kVoicesFile, voices);
@@ -96,6 +109,13 @@ class SettingsStore extends ChangeNotifier {
     }
   }
 
+  bool _isUsable(String key) {
+    final path = _prefs.getString(key) ?? '';
+    return path.isNotEmpty && File(path).existsSync();
+  }
+
+  /// Bundled location first: the Windows build installs the model into
+  /// `models/` next to the executable, so a downloaded app is self-contained.
   static List<String> _candidateModelDirs() {
     final sep = Platform.pathSeparator;
     final home =
@@ -104,9 +124,9 @@ class SettingsStore extends ChangeNotifier {
 
     return [
       '$exeDir${sep}models',
+      '$exeDir${sep}data${sep}models',
       '${Directory.current.path}${sep}models',
       if (home.isNotEmpty) ...[
-        '$home${sep}Documents${sep}GitHub${sep}A.S.H${sep}models',
         '$home$sep.kokoro',
         '$home${sep}models',
         '$home${sep}Downloads',

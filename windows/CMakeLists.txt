@@ -106,3 +106,33 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# === Lumen: bundle the Kokoro speech model with the app ===========================
+#
+# The narration engine needs kokoro-v1.0.onnx and voices-v1.0.bin on disk. Copying
+# them into the bundle means a downloaded build can speak immediately, with no
+# separate model download and nothing for the user to point at.
+#
+# They land next to the executable in "models/", which is the first location the
+# app probes at startup. Override the source folder with:
+#   flutter build windows --dart-define=... is not enough; use
+#   cmake -DLUMEN_MODELS_DIR=<path>
+set(LUMEN_MODELS_DIR "${CMAKE_SOURCE_DIR}/../models" CACHE PATH
+  "Folder holding the Kokoro model files to bundle with the application")
+
+if(EXISTS "${LUMEN_MODELS_DIR}")
+  # CMake skips files that are already up to date, so the 325 MB model is copied
+  # once rather than on every incremental build.
+  install(DIRECTORY "${LUMEN_MODELS_DIR}/"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}/models"
+    COMPONENT Runtime
+    FILES_MATCHING
+      PATTERN "*.onnx"
+      PATTERN "*.bin"
+      PATTERN "*.json")
+else()
+  message(WARNING
+    "Kokoro models not found at ${LUMEN_MODELS_DIR}. The app will build, but "
+    "narration stays offline until a model is selected in Settings. Run "
+    "tool/fetch_models.ps1 to download them.")
+endif()
