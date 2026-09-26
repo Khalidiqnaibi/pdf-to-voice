@@ -41,7 +41,7 @@ class SettingsStore extends ChangeNotifier {
   bool get highlightSentence => _prefs.getBool(_kHighlight) ?? true;
 
   EngineConfig get engineConfig => EngineConfig(
-    pythonPath: _prefs.getString(_kPython) ?? _defaultPython(),
+    pythonPath: _prefs.getString(_kPython) ?? _bundledPython() ?? _systemPython(),
     modelPath: _prefs.getString(_kModel) ?? '',
     voicesPath: _prefs.getString(_kVoicesFile) ?? '',
   );
@@ -72,7 +72,30 @@ class SettingsStore extends ChangeNotifier {
 
   // -------------------------------------------------------------- autodetection
 
-  static String _defaultPython() => Platform.isWindows ? 'python' : 'python3';
+  static String _systemPython() => Platform.isWindows ? 'python' : 'python3';
+
+  /// The interpreter shipped inside the app bundle, if this build has one.
+  ///
+  /// `tool/fetch_runtime.ps1` builds a private Python with kokoro-onnx already
+  /// installed, and the Windows build copies it next to the executable.
+  static String? _bundledPython() {
+    final sep = Platform.pathSeparator;
+    final exe = Platform.isWindows ? 'python.exe' : 'bin${sep}python3';
+    final roots = [
+      File(Platform.resolvedExecutable).parent.path,
+      Directory.current.path,
+    ];
+    for (final root in roots) {
+      final path = '$root${sep}runtime$sep$exe';
+      if (File(path).existsSync()) return path;
+    }
+    return null;
+  }
+
+  /// True for a value we chose ourselves rather than one the user typed, so it
+  /// can be upgraded to a bundled runtime without discarding a real preference.
+  static bool _isSystemDefault(String value) =>
+      value == 'python' || value == 'python3' || value.trim().isEmpty;
 
   /// Finds the Kokoro weights so the setup sheet is something people opt into
   /// rather than something they have to get past.
@@ -82,8 +105,13 @@ class SettingsStore extends ChangeNotifier {
   /// which ships the model beside the executable is picked up automatically,
   /// even for someone whose settings still name an older location.
   Future<void> _seedEnginePaths() async {
-    if (_prefs.getString(_kPython) == null) {
-      await _prefs.setString(_kPython, _defaultPython());
+    // Prefer the bundled interpreter, including for someone whose settings still
+    // say plain "python" from an earlier build. An explicitly chosen path is
+    // left alone.
+    final bundled = _bundledPython();
+    final storedPython = _prefs.getString(_kPython);
+    if (storedPython == null || (bundled != null && _isSystemDefault(storedPython))) {
+      await _prefs.setString(_kPython, bundled ?? _systemPython());
     }
 
     final needsModel = !_isUsable(_kModel);

@@ -23,13 +23,10 @@ sentence, highlighting the page as it goes.
 
 ## Requirements
 
-| | |
-|---|---|
-| Flutter | 3.47+ with Windows desktop support |
-| Python | 3.9+ on `PATH`, with `pip install kokoro-onnx` |
+To **build**: Flutter 3.47+ with Windows desktop support. Nothing else.
 
-The Kokoro weights are **bundled into the build** — see below. Python is still an
-external dependency.
+To **run a built copy**: nothing. The speech model and a private Python runtime
+are both bundled into the app — see [Self-contained builds](#self-contained-builds).
 
 ### Windows Developer Mode
 
@@ -42,10 +39,15 @@ start ms-settings:developers
 
 ## Running
 
-The model files are too large for git, so fetch them once:
+The model and runtime are too large for git, so fetch them once. Both scripts are
+idempotent — re-running them is a no-op:
 
 ```bash
 pwsh tool/fetch_models.ps1
+```
+
+```bash
+pwsh tool/fetch_runtime.ps1
 ```
 
 Then:
@@ -55,10 +57,10 @@ flutter pub get
 flutter run -d windows
 ```
 
-## Bundled models
+## Self-contained builds
 
-`windows/CMakeLists.txt` copies everything in `models/` into the application
-bundle, so the built app carries its own voice:
+`windows/CMakeLists.txt` copies both the model and the Python runtime into the
+application bundle:
 
 ```
 build/windows/x64/runner/Release/
@@ -66,25 +68,34 @@ build/windows/x64/runner/Release/
   models/
     kokoro-v1.0.onnx     325 MB
     voices-v1.0.bin       28 MB
+  runtime/               144 MB   embedded Python + kokoro-onnx
   data/flutter_assets/
 ```
 
-Zip that folder and the app speaks on any machine with Python — nothing to
-download, nothing to point at. At startup Lumen probes `<app>/models` first, then
-`<app>/data/models`, `./models`, `~/.kokoro`, `~/models`, `~/Downloads`, and falls
-back to whatever is set in **Settings**. That probe re-runs on every launch and
-whenever a saved path has gone missing, so the bundled copy is picked up even for
-someone whose settings still name an older location.
+Zip that folder and it speaks on a machine with no Python, no pip and nothing to
+download — about 500 MB all in.
 
-CMake skips files that are already up to date, so the 325 MB model is copied once
-rather than on every incremental build. To bundle from somewhere else:
+`tool/fetch_runtime.ps1` assembles the runtime from the official Windows
+embeddable distribution: it enables site-packages (off by default in that build),
+bootstraps pip, installs `kokoro-onnx`, then drops pip, setuptools and wheel,
+which are only needed at install time.
+
+At startup Lumen prefers `<app>/runtime/python.exe` for the interpreter and
+`<app>/models` for the weights, then falls back through `./models`, `~/.kokoro`,
+`~/models`, `~/Downloads` and finally whatever is set in **Settings**. The probe
+re-runs on every launch and whenever a saved path has gone missing, so a bundled
+copy is picked up even for someone whose settings name an older location. An
+interpreter path you typed yourself is never overwritten.
+
+CMake skips files that are already up to date, so the large payloads are copied
+once rather than on every incremental build. To bundle from elsewhere:
 
 ```bash
-cmake -DLUMEN_MODELS_DIR=<path>
+cmake -DLUMEN_MODELS_DIR=<path> -DLUMEN_RUNTIME_DIR=<path>
 ```
 
-If `models/` is empty the build still succeeds, with a warning; narration stays
-offline until a model is chosen in Settings.
+Either can be absent: the build still succeeds with a warning, and the app falls
+back to a system Python and a model chosen in Settings.
 
 ## Keyboard
 
@@ -142,8 +153,7 @@ flutter test
 - Multi-column layouts follow pdfium's reading order, which is usually but not
   always correct.
 - Windows only so far. The code is platform-neutral apart from the sidecar launch;
-  macOS and Linux need `media_kit_libs_<os>_audio` added to `pubspec.yaml`, and an
-  equivalent model-copy rule in their own CMake/Xcode bundle step.
-- **Python is not bundled.** The models ship with the app, but the target machine
-  still needs Python with `kokoro-onnx` installed. Shipping an embedded Python
-  runtime alongside the models would close that gap, at roughly +150 MB.
+  macOS and Linux need `media_kit_libs_<os>_audio` added to `pubspec.yaml`, plus
+  their own bundle rules for the model and runtime.
+- A self-contained build is ~500 MB, most of it the Kokoro weights. Nothing here
+  streams the model or fetches it on first launch.

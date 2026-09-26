@@ -119,3 +119,6 @@ app.*.symbols
 !/dev/ci/**/Gemfile.lock
 # Bundled speech models (large binaries, fetched with tool/fetch_models.ps1)
 /models/
+
+# Bundled Python runtime (built with tool/fetch_runtime.ps1)
+/runtime/

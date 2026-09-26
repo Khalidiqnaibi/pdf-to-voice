@@ -136,3 +136,26 @@ else()
     "narration stays offline until a model is selected in Settings. Run "
     "tool/fetch_models.ps1 to download them.")
 endif()
+
+# === Lumen: bundle a private Python runtime =======================================
+#
+# The speech sidecar runs on Python. Shipping the runtime built by
+# tool/fetch_runtime.ps1 means the app needs nothing installed on the target
+# machine -- no system Python, no pip, no kokoro-onnx.
+#
+# It lands in "runtime/" beside the executable, which is where the app looks for
+# its interpreter before falling back to whatever is on PATH.
+set(LUMEN_RUNTIME_DIR "${CMAKE_SOURCE_DIR}/../runtime" CACHE PATH
+  "Self-contained Python runtime to bundle with the application")
+
+if(EXISTS "${LUMEN_RUNTIME_DIR}/python.exe")
+  install(DIRECTORY "${LUMEN_RUNTIME_DIR}/"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}/runtime"
+    COMPONENT Runtime
+    USE_SOURCE_PERMISSIONS)
+else()
+  message(WARNING
+    "No bundled Python runtime at ${LUMEN_RUNTIME_DIR}. The app will fall back to "
+    "a system Python that has kokoro-onnx installed. Run tool/fetch_runtime.ps1 "
+    "to build a self-contained one.")
+endif()

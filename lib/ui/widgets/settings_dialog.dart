@@ -138,7 +138,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     _PathField(
                       label: 'Python interpreter',
                       hint: 'python',
-                      helper: 'Must have kokoro-onnx installed (pip install kokoro-onnx).',
+                      helper: 'Defaults to the runtime bundled with the app. Point this at '
+                          'your own Python only if it has kokoro-onnx installed.',
                       controller: _python,
                     ),
                     _PathField(
