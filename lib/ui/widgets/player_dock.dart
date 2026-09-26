@@ -233,6 +233,12 @@ class _SentenceStrip extends StatelessWidget {
             child: AnimatedSwitcher(
               duration: LumenMotion.base,
               switchInCurve: LumenMotion.curve,
+              // The default layout builder stacks children centred; the strip
+              // reads as a line of prose, so it has to start at the left edge.
+              layoutBuilder: (current, previous) => Stack(
+                alignment: Alignment.centerLeft,
+                children: [...previous, ?current],
+              ),
               transitionBuilder: (child, animation) => FadeTransition(
                 opacity: animation,
                 child: SlideTransition(

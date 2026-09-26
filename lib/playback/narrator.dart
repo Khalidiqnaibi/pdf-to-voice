@@ -371,6 +371,16 @@ class Narrator extends ChangeNotifier {
 
   void _onCompleted(bool completed) {
     if (!completed || !_intendsToPlay || _phase != NarratorPhase.playing) return;
+    assert(() {
+      final at = position.value.inMilliseconds;
+      final clip = _clipDuration.inMilliseconds;
+      debugPrint(
+        '[narrator] eof at ${at}ms of ${clip}ms '
+        '(short by ${clip - at}ms), player says '
+        '${_player.state.duration.inMilliseconds}ms',
+      );
+      return true;
+    }());
     if (_index + 1 >= _script.length) {
       _finish();
       return;

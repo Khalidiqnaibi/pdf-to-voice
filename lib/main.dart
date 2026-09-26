@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
@@ -48,9 +49,21 @@ Future<void> main() async {
   if (_isDesktop) {
     await windowManager.setPreventClose(true);
     windowManager.addListener(_ShutdownHandler(tts));
+    _syncTitleBar(settings);
+    settings.addListener(() => _syncTitleBar(settings));
   }
 
   runApp(LumenApp(settings: settings, library: library, tts: tts));
+}
+
+/// Keeps the OS title bar in step with the in-app theme. Left alone it renders
+/// in the system accent colour, which sits badly above a dark window.
+void _syncTitleBar(SettingsStore settings) {
+  final mode = settings.themeMode;
+  final dark = mode == ThemeMode.dark ||
+      (mode == ThemeMode.system &&
+          PlatformDispatcher.instance.platformBrightness == Brightness.dark);
+  windowManager.setBrightness(dark ? Brightness.dark : Brightness.light);
 }
 
 /// Stops the Kokoro sidecar before the window goes away, so the model is not

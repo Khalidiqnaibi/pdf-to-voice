@@ -31,6 +31,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SAMPLE_RATE = 24000
 
+# Kokoro trims silence from both ends, so a clip stops dead on its final
+# phoneme. That makes back-to-back sentences run together, and leaves no
+# slack for the player's end-of-file timing, which clips the last word.
+# A short tail fixes both.
+TAIL_SILENCE_SEC = 0.35
+
 # Kokoro's voice names are prefixed with a language letter and a gender letter,
 # e.g. "af_heart" = American English, female. espeak needs the language code.
 _LANG_BY_PREFIX = {
@@ -51,7 +57,13 @@ _MAX_CHARS = 400
 
 
 def _log(*args):
-    print(*args, file=sys.stderr, flush=True)
+    # Never let logging raise. Once the app exits, the reader on our stderr pipe
+    # is gone and a write raises BrokenPipeError -- which, from the shutdown
+    # watchdog, would kill the very thread whose job is to terminate us.
+    try:
+        print(*args, file=sys.stderr, flush=True)
+    except Exception:
+        pass
 
 
 class Engine:
@@ -85,7 +97,8 @@ class Engine:
                     chunks.append(np.zeros(int(SAMPLE_RATE * 0.06), dtype=np.float32))
 
         audio = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
-        return _to_wav(audio)
+        tail = np.zeros(int(SAMPLE_RATE * TAIL_SILENCE_SEC), dtype=np.float32)
+        return _to_wav(np.concatenate([audio, tail]))
 
 
 def _split(text: str, limit: int) -> list[str]:
@@ -183,15 +196,17 @@ class Handler(BaseHTTPRequestHandler):
             self._json(500, {"error": str(exc)})
 
 
-def _watch_parent(server):
-    """Exit when the app goes away.
+def _watch_parent(server, parent_pid: int | None):
+    """Exit when the app goes away, so a 325 MB model is never left resident.
 
-    The parent holds our stdin open for as long as it lives. If it closes or
-    crashes we read EOF here and shut down, so a 325 MB model is never left
-    resident after the window is gone.
+    Two independent triggers, because either one alone has a blind spot:
+
+    * stdin EOF -- covers a normal shutdown, where the app closes the pipe.
+    * a wait on the parent's process handle -- covers a crash or a forced kill,
+      which does not reliably surface as EOF on our end of the pipe.
     """
 
-    def run():
+    def on_stdin():
         try:
             while sys.stdin.readline():
                 pass
@@ -200,7 +215,49 @@ def _watch_parent(server):
         _log("parent closed stdin; shutting down")
         server.shutdown()
 
-    threading.Thread(target=run, daemon=True).start()
+    threading.Thread(target=on_stdin, daemon=True).start()
+
+    if parent_pid is None or os.name != "nt":
+        return
+
+    import ctypes
+    from ctypes import wintypes
+
+    SYNCHRONIZE = 0x00100000
+    INFINITE = 0xFFFFFFFF
+    WAIT_OBJECT_0 = 0x00000000
+
+    # argtypes/restype are not optional here. Left untyped, ctypes passes the
+    # handle and timeout as plain C ints, and the call returns WAIT_OBJECT_0
+    # immediately instead of blocking -- which would shut the engine down the
+    # moment it started.
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+
+    handle = kernel32.OpenProcess(SYNCHRONIZE, False, parent_pid)
+    if not handle:
+        _log(
+            "could not watch parent pid %s (error %s)"
+            % (parent_pid, ctypes.get_last_error())
+        )
+        return
+
+    def on_exit():
+        # Blocks until the parent terminates, however it terminates.
+        if kernel32.WaitForSingleObject(handle, INFINITE) != WAIT_OBJECT_0:
+            return
+        _log("parent process %s exited; shutting down" % parent_pid)
+        # os._exit rather than server.shutdown(): once the app is gone, the
+        # reader on our stdin pipe is gone with it, and the stdin thread stays
+        # wedged in a blocking read that never returns EOF. That stalls
+        # interpreter finalisation, so a graceful shutdown here would leave the
+        # model resident forever. There is nothing left worth flushing.
+        os._exit(0)
+
+    threading.Thread(target=on_exit, daemon=True).start()
 
 
 def main() -> int:
@@ -208,6 +265,7 @@ def main() -> int:
     ap.add_argument("--model", required=True)
     ap.add_argument("--voices", required=True)
     ap.add_argument("--port", type=int, default=0)
+    ap.add_argument("--parent-pid", type=int, default=None)
     args = ap.parse_args()
 
     for label, path in (("model", args.model), ("voices", args.voices)):
@@ -226,7 +284,7 @@ def main() -> int:
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     port = server.server_address[1]
 
-    _watch_parent(server)
+    _watch_parent(server, args.parent_pid)
 
     print(
         "LUMEN_READY "

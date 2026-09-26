@@ -315,6 +315,9 @@ class _DocumentRailState extends State<DocumentRail> {
                 final width = constraints.maxWidth;
                 return AnimatedContainer(
                   duration: LumenMotion.quick,
+                  // Without an explicit width the Stack below shrink-wraps and
+                  // the rail collapses to a stub in the middle of the dock.
+                  width: double.infinity,
                   height: thick ? 8 : 5,
                   decoration: BoxDecoration(
                     color: p.stroke,
@@ -415,7 +418,9 @@ String formatDuration(Duration d) {
 
 /// "18 min left", "1 hr 4 min left" - friendlier than a raw clock in the dock.
 String formatRemaining(Duration d) {
-  if (d.inSeconds < 45) return 'almost done';
+  if (d.inSeconds < 20) return 'almost done';
+  // Below a minute inMinutes rounds to 0, which read as "0 min left".
+  if (d.inSeconds < 60) return 'under a minute';
   if (d.inMinutes < 60) return '${d.inMinutes} min left';
   final hours = d.inHours;
   final minutes = d.inMinutes % 60;

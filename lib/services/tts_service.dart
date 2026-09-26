@@ -110,6 +110,10 @@ class TtsService extends ChangeNotifier {
         config.voicesPath,
         '--port',
         '0',
+        // Lets the sidecar wait on our process handle, so it also exits if this
+        // app is killed outright rather than closed.
+        '--parent-pid',
+        '$pid',
       ];
 
       // Spawn without a shell so our stdin pipe reaches Python directly: the
@@ -229,8 +233,12 @@ class TtsService extends ChangeNotifier {
 
   // ---------------------------------------------------------------- synthesis
 
+  /// Bumped whenever the rendered audio changes shape (e.g. the silence tail),
+  /// so stale clips from an older build are re-rendered instead of reused.
+  static const _cacheVersion = 'v2';
+
   String _key(String text, String voice) =>
-      '$voice/${sha1.convert(utf8.encode(text)).toString()}';
+      '$voice/$_cacheVersion-${sha1.convert(utf8.encode(text)).toString()}';
 
   File _fileFor(String key) =>
       File('${_cacheDir!.path}${Platform.pathSeparator}${key.replaceAll('/', '_')}.wav');
