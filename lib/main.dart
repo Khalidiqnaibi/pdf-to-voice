@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
@@ -8,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'app.dart';
 import 'services/library_store.dart';
+import 'services/model_store.dart';
 import 'services/settings_store.dart';
 import 'services/tts_service.dart';
 
@@ -40,11 +42,15 @@ Future<void> main() async {
   final tts = TtsService();
 
   // Bring the engine up in the background: the library is usable immediately and
-  // Kokoro is usually warm by the time a document is open.
-  final config = settings.engineConfig;
-  if (config.isComplete) {
-    tts.start(config);
-  }
+  // Kokoro is usually warm by the time a document is open. On a fresh mobile
+  // install there is no bundle yet, so the engine waits for the download.
+  final models = ModelStore(settings);
+  models.addListener(() {
+    if (models.isReady && tts.status == EngineStatus.idle) {
+      tts.start(settings.engineConfig);
+    }
+  });
+  unawaited(models.locate());
 
   if (_isDesktop) {
     await windowManager.setPreventClose(true);
@@ -53,7 +59,7 @@ Future<void> main() async {
     settings.addListener(() => _syncTitleBar(settings));
   }
 
-  runApp(LumenApp(settings: settings, library: library, tts: tts));
+  runApp(LumenApp(settings: settings, library: library, tts: tts, models: models));
 }
 
 /// Keeps the OS title bar in step with the in-app theme. Left alone it renders

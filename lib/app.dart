@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'services/library_store.dart';
+import 'services/model_store.dart';
 import 'services/settings_store.dart';
 import 'services/tts_service.dart';
 import 'theme/app_theme.dart';
@@ -15,12 +16,14 @@ class AppScope extends InheritedWidget {
     required this.settings,
     required this.library,
     required this.tts,
+    required this.models,
     required super.child,
   });
 
   final SettingsStore settings;
   final LibraryStore library;
   final TtsService tts;
+  final ModelStore models;
 
   static AppScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AppScope>();
@@ -30,7 +33,10 @@ class AppScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(AppScope oldWidget) =>
-      settings != oldWidget.settings || library != oldWidget.library || tts != oldWidget.tts;
+      settings != oldWidget.settings ||
+      library != oldWidget.library ||
+      tts != oldWidget.tts ||
+      models != oldWidget.models;
 }
 
 class LumenApp extends StatelessWidget {
@@ -39,11 +45,13 @@ class LumenApp extends StatelessWidget {
     required this.settings,
     required this.library,
     required this.tts,
+    required this.models,
   });
 
   final SettingsStore settings;
   final LibraryStore library;
   final TtsService tts;
+  final ModelStore models;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +59,7 @@ class LumenApp extends StatelessWidget {
       settings: settings,
       library: library,
       tts: tts,
+      models: models,
       child: ListenableBuilder(
         listenable: settings,
         builder: (context, _) {

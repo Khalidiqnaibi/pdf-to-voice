@@ -14,9 +14,7 @@ class SettingsStore extends ChangeNotifier {
   static const _kSpeed = 'speed';
   static const _kAutoScroll = 'auto_scroll';
   static const _kHighlight = 'highlight';
-  static const _kPython = 'python_path';
-  static const _kModel = 'model_path';
-  static const _kVoicesFile = 'voices_path';
+  static const _kModelDir = 'model_dir';
 
   final SharedPreferences _prefs;
 
@@ -40,11 +38,8 @@ class SettingsStore extends ChangeNotifier {
 
   bool get highlightSentence => _prefs.getBool(_kHighlight) ?? true;
 
-  EngineConfig get engineConfig => EngineConfig(
-    pythonPath: _prefs.getString(_kPython) ?? _bundledPython() ?? _systemPython(),
-    modelPath: _prefs.getString(_kModel) ?? '',
-    voicesPath: _prefs.getString(_kVoicesFile) ?? '',
-  );
+  EngineConfig get engineConfig =>
+      EngineConfig(modelDir: _prefs.getString(_kModelDir) ?? '');
 
   // ------------------------------------------------------------- writing prefs
 
@@ -59,11 +54,8 @@ class SettingsStore extends ChangeNotifier {
 
   Future<void> setHighlightSentence(bool value) => _set(() => _prefs.setBool(_kHighlight, value));
 
-  Future<void> setEngineConfig(EngineConfig config) => _set(() async {
-    await _prefs.setString(_kPython, config.pythonPath);
-    await _prefs.setString(_kModel, config.modelPath);
-    await _prefs.setString(_kVoicesFile, config.voicesPath);
-  });
+  Future<void> setEngineConfig(EngineConfig config) =>
+      _set(() => _prefs.setString(_kModelDir, config.modelDir));
 
   Future<void> _set(Future<void> Function() write) async {
     await write();
@@ -72,101 +64,42 @@ class SettingsStore extends ChangeNotifier {
 
   // -------------------------------------------------------------- autodetection
 
-  static String _systemPython() => Platform.isWindows ? 'python' : 'python3';
-
-  /// The interpreter shipped inside the app bundle, if this build has one.
-  ///
-  /// `tool/fetch_runtime.ps1` builds a private Python with kokoro-onnx already
-  /// installed, and the Windows build copies it next to the executable.
-  static String? _bundledPython() {
-    final sep = Platform.pathSeparator;
-    final exe = Platform.isWindows ? 'python.exe' : 'bin${sep}python3';
-    final roots = [
-      File(Platform.resolvedExecutable).parent.path,
-      Directory.current.path,
-    ];
-    for (final root in roots) {
-      final path = '$root${sep}runtime$sep$exe';
-      if (File(path).existsSync()) return path;
-    }
-    return null;
-  }
-
-  /// True for a value we chose ourselves rather than one the user typed, so it
-  /// can be upgraded to a bundled runtime without discarding a real preference.
-  static bool _isSystemDefault(String value) =>
-      value == 'python' || value == 'python3' || value.trim().isEmpty;
-
-  /// Finds the Kokoro weights so the setup sheet is something people opt into
+  /// Finds the Kokoro bundle so the setup sheet is something people opt into
   /// rather than something they have to get past.
   ///
-  /// This runs on every launch, not just the first, and re-probes whenever a
-  /// stored path points at a file that is no longer there. That way a build
-  /// which ships the model beside the executable is picked up automatically,
-  /// even for someone whose settings still name an older location.
+  /// This runs on every launch, not just the first, and re-probes whenever the
+  /// stored folder has gone missing. That way a build which ships the model
+  /// beside the executable is picked up automatically, even for someone whose
+  /// settings still name an older location.
   Future<void> _seedEnginePaths() async {
-    // Prefer the bundled interpreter, including for someone whose settings still
-    // say plain "python" from an earlier build. An explicitly chosen path is
-    // left alone.
-    final bundled = _bundledPython();
-    final storedPython = _prefs.getString(_kPython);
-    if (storedPython == null || (bundled != null && _isSystemDefault(storedPython))) {
-      await _prefs.setString(_kPython, bundled ?? _systemPython());
-    }
+    final stored = _prefs.getString(_kModelDir) ?? '';
+    if (stored.isNotEmpty && EngineConfig(modelDir: stored).isComplete) return;
 
-    final needsModel = !_isUsable(_kModel);
-    final needsVoices = !_isUsable(_kVoicesFile);
-    if (!needsModel && !needsVoices) return;
-
-    for (final dir in _candidateModelDirs()) {
-      final model = _firstExisting(dir, const [
-        'kokoro-v1.0.onnx',
-        'kokoro-v1.0.fp16.onnx',
-        'kokoro.onnx',
-      ]);
-      final voices = _firstExisting(dir, const [
-        'voices-v1.0.bin',
-        'voices.bin',
-        'voices.json',
-      ]);
-      if (model != null && voices != null) {
-        if (needsModel) await _prefs.setString(_kModel, model);
-        if (needsVoices) await _prefs.setString(_kVoicesFile, voices);
+    for (final dir in candidateModelDirs()) {
+      if (EngineConfig(modelDir: dir).isComplete) {
+        await _prefs.setString(_kModelDir, dir);
         return;
       }
     }
   }
 
-  bool _isUsable(String key) {
-    final path = _prefs.getString(key) ?? '';
-    return path.isNotEmpty && File(path).existsSync();
-  }
-
-  /// Bundled location first: the Windows build installs the model into
-  /// `models/` next to the executable, so a downloaded app is self-contained.
-  static List<String> _candidateModelDirs() {
+  /// Bundled location first: desktop builds install the model next to the
+  /// executable, and on mobile it is downloaded into app support.
+  static List<String> candidateModelDirs() {
     final sep = Platform.pathSeparator;
-    final home =
-        Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'] ?? '';
-    final exeDir = File(Platform.resolvedExecutable).parent.path;
+    final roots = <String>[
+      if (!Platform.isAndroid && !Platform.isIOS) ...[
+        File(Platform.resolvedExecutable).parent.path,
+        Directory.current.path,
+      ],
+    ];
 
     return [
-      '$exeDir${sep}models',
-      '$exeDir${sep}data${sep}models',
-      '${Directory.current.path}${sep}models',
-      if (home.isNotEmpty) ...[
-        '$home$sep.kokoro',
-        '$home${sep}models',
-        '$home${sep}Downloads',
-      ],
+      for (final root in roots) ...['$root${sep}models', '$root${sep}data${sep}models'],
     ];
   }
 
-  static String? _firstExisting(String dir, List<String> names) {
-    for (final name in names) {
-      final path = '$dir${Platform.pathSeparator}$name';
-      if (File(path).existsSync()) return path;
-    }
-    return null;
-  }
+  /// Records a bundle that was downloaded at runtime (mobile first launch).
+  Future<void> adoptModelDir(String dir) =>
+      _set(() => _prefs.setString(_kModelDir, dir));
 }

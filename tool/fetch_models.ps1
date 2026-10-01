@@ -1,13 +1,15 @@
 <#
 .SYNOPSIS
-  Downloads the Kokoro speech model into models/ so the build can bundle it.
+  Downloads the Kokoro speech bundle into models/ so the build can ship it.
 
 .DESCRIPTION
-  The model files are too large for git, so they are fetched on demand. The
-  Windows build copies whatever is in models/ into the application bundle, which
-  is what lets a downloaded build speak without any extra setup.
+  The bundle is too large for git, so it is fetched on demand. It holds the
+  full-precision Kokoro v1.0 model, the 54-voice pack, the token table, the
+  espeak-ng phoneme data and the lexicons — everything the engine needs to speak
+  offline. The desktop build copies models/ into the application bundle; on
+  mobile the same archive is downloaded on first launch.
 
-  Already-complete files are left alone, so this is safe to re-run.
+  Already-complete downloads are left alone, so this is safe to re-run.
 
 .EXAMPLE
   pwsh tool/fetch_models.ps1
@@ -15,7 +17,7 @@
 #>
 [CmdletBinding()]
 param(
-    # Re-download even if the file already looks complete.
+    # Re-download and re-extract even if the bundle already looks complete.
     [switch]$Force
 )
 
@@ -23,52 +25,66 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $dest = Join-Path $root 'models'
-$base = 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0'
+$url = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2'
 
-$files = @(
-    @{ Name = 'kokoro-v1.0.onnx'; MinBytes = 300MB }
-    @{ Name = 'voices-v1.0.bin';  MinBytes = 25MB  }
-)
+# What the engine refuses to start without.
+$required = @('model.onnx', 'voices.bin', 'tokens.txt', 'espeak-ng-data')
 
-if (-not (Test-Path $dest)) {
-    New-Item -ItemType Directory -Path $dest | Out-Null
+function Test-Bundle {
+    if (-not (Test-Path $dest)) { return $false }
+    foreach ($item in $required) {
+        if (-not (Test-Path (Join-Path $dest $item))) { return $false }
+    }
+    # A truncated download leaves a plausible-looking but tiny model behind.
+    return (Get-Item (Join-Path $dest 'model.onnx')).Length -gt 300MB
 }
 
-foreach ($file in $files) {
-    $path = Join-Path $dest $file.Name
-
-    if (-not $Force -and (Test-Path $path)) {
-        $size = (Get-Item $path).Length
-        if ($size -ge $file.MinBytes) {
-            Write-Host ("  ok       {0} ({1:N0} MB)" -f $file.Name, ($size / 1MB))
-            continue
-        }
-        Write-Host ("  partial  {0} - re-downloading" -f $file.Name)
-    }
-
-    $url = "$base/$($file.Name)"
-    $temp = "$path.download"
-    Write-Host ("  fetching {0}" -f $file.Name)
-
-    # Invoke-WebRequest's progress bar makes large downloads crawl in PS 5.1.
-    $previous = $ProgressPreference
-    $ProgressPreference = 'SilentlyContinue'
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $temp -UseBasicParsing
-    } finally {
-        $ProgressPreference = $previous
-    }
-
-    $size = (Get-Item $temp).Length
-    if ($size -lt $file.MinBytes) {
-        Remove-Item $temp -Force
-        throw "$($file.Name) downloaded only $([math]::Round($size/1MB,1)) MB; expected at least $([math]::Round($file.MinBytes/1MB,0)) MB."
-    }
-
-    Move-Item -Path $temp -Destination $path -Force
-    Write-Host ("  done     {0} ({1:N0} MB)" -f $file.Name, ($size / 1MB))
+if (-not $Force -and (Test-Bundle)) {
+    $mb = [math]::Round((Get-ChildItem $dest -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
+    Write-Host "  ok       Kokoro bundle already present ($mb MB)"
+    Write-Host "Models ready in $dest"
+    exit 0
 }
 
+$archive = Join-Path $env:TEMP 'kokoro-multi-lang-v1_0.tar.bz2'
+$staging = Join-Path $env:TEMP 'kokoro-extract'
+
+Write-Host '  fetching Kokoro bundle (about 333 MB)'
+$previous = $ProgressPreference
+$ProgressPreference = 'SilentlyContinue'
+try {
+    Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
+} finally {
+    $ProgressPreference = $previous
+}
+
+if ((Get-Item $archive).Length -lt 300MB) {
+    Remove-Item $archive -Force
+    throw 'Download was truncated; re-run the script.'
+}
+
+Write-Host '  extracting'
+if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+New-Item -ItemType Directory -Path $staging | Out-Null
+
+# bsdtar ships with Windows 10 1803+ and handles .tar.bz2 in one pass.
+& tar -xf $archive -C $staging
+if ($LASTEXITCODE -ne 0) { throw 'Extraction failed. Is tar available on PATH?' }
+
+$extracted = Get-ChildItem $staging -Directory | Select-Object -First 1
+if (-not $extracted) { throw 'Archive did not contain the expected folder.' }
+
+if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+Move-Item -Path $extracted.FullName -Destination $dest
+
+Remove-Item $archive -Force
+Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
+
+if (-not (Test-Bundle)) {
+    throw "Bundle is incomplete after extraction; expected $($required -join ', ') in $dest."
+}
+
+$mb = [math]::Round((Get-ChildItem $dest -Recurse -File | Measure-Object Length -Sum).Sum / 1MB)
 Write-Host ''
-Write-Host "Models ready in $dest"
-Write-Host 'They will be copied into the app bundle on the next Windows build.'
+Write-Host "  done     Kokoro bundle ready ($mb MB)"
+Write-Host "It will be copied into the app bundle on the next desktop build."

@@ -9,6 +9,7 @@ import '../models/library_entry.dart';
 import '../services/tts_service.dart';
 import '../theme/app_theme.dart';
 import 'reader_screen.dart';
+import 'widgets/model_setup_card.dart';
 import 'widgets/primitives.dart';
 import 'widgets/settings_dialog.dart';
 
@@ -74,6 +75,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           child: Column(
             children: [
               _Header(onOpen: _pickAndOpen, opening: _opening),
+              ModelSetupCard(models: scope.models),
               Expanded(
                 child: ListenableBuilder(
                   listenable: scope.library,

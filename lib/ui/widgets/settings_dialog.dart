@@ -29,9 +29,7 @@ class _SettingsDialog extends StatefulWidget {
 }
 
 class _SettingsDialogState extends State<_SettingsDialog> {
-  late final _python = TextEditingController(text: widget.settings.engineConfig.pythonPath);
-  late final _model = TextEditingController(text: widget.settings.engineConfig.modelPath);
-  late final _voices = TextEditingController(text: widget.settings.engineConfig.voicesPath);
+  late final _modelDir = TextEditingController(text: widget.settings.engineConfig.modelDir);
 
   int _cacheBytes = 0;
   bool _showLog = false;
@@ -44,9 +42,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 
   @override
   void dispose() {
-    _python.dispose();
-    _model.dispose();
-    _voices.dispose();
+    _modelDir.dispose();
     super.dispose();
   }
 
@@ -55,21 +51,15 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     if (mounted) setState(() => _cacheBytes = bytes);
   }
 
-  Future<void> _pick(TextEditingController target, List<String> extensions) async {
-    final picked = await FilePicker.pickFile(
-      type: FileType.custom,
-      allowedExtensions: extensions,
+  Future<void> _pickFolder() async {
+    final dir = await FilePicker.getDirectoryPath(
+      dialogTitle: 'Choose the Kokoro model folder',
     );
-    final path = picked?.path;
-    if (path != null) setState(() => target.text = path);
+    if (dir != null) setState(() => _modelDir.text = dir);
   }
 
   Future<void> _applyAndRestart() async {
-    final config = EngineConfig(
-      pythonPath: _python.text.trim(),
-      modelPath: _model.text.trim(),
-      voicesPath: _voices.text.trim(),
-    );
+    final config = EngineConfig(modelDir: _modelDir.text.trim());
     await widget.settings.setEngineConfig(config);
     await widget.tts.start(config);
     if (mounted) setState(() {});
@@ -136,23 +126,11 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     ),
                     const SizedBox(height: 16),
                     _PathField(
-                      label: 'Python interpreter',
-                      hint: 'python',
-                      helper: 'Defaults to the runtime bundled with the app. Point this at '
-                          'your own Python only if it has kokoro-onnx installed.',
-                      controller: _python,
-                    ),
-                    _PathField(
-                      label: 'Kokoro model',
-                      hint: r'C:\models\kokoro-v1.0.onnx',
-                      controller: _model,
-                      onBrowse: () => _pick(_model, ['onnx']),
-                    ),
-                    _PathField(
-                      label: 'Voice pack',
-                      hint: r'C:\models\voices-v1.0.bin',
-                      controller: _voices,
-                      onBrowse: () => _pick(_voices, ['bin', 'json']),
+                      label: 'Kokoro model folder',
+                      hint: r'C:\models\kokoro-multi-lang-v1_0',
+                      helper: 'Holds model.onnx, voices.bin, tokens.txt and espeak-ng-data.',
+                      controller: _modelDir,
+                      onBrowse: _pickFolder,
                     ),
                     const SizedBox(height: 8),
                     Align(

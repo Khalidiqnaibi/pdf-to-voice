@@ -1,14 +1,14 @@
 # Lumen Reader
 
-A Flutter desktop PDF reader that reads documents aloud with
-[Kokoro](https://github.com/thewh1teagle/kokoro-onnx) neural speech — sentence by
-sentence, highlighting the page as it goes.
+A Flutter PDF reader that reads documents aloud with
+[Kokoro](https://github.com/hexgrad/kokoro) neural speech — sentence by sentence,
+highlighting the page as it goes. Runs on Windows and Android, fully offline.
 
-![platform](https://img.shields.io/badge/platform-Windows-blue) ![flutter](https://img.shields.io/badge/flutter-3.47-blue)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-blue) ![flutter](https://img.shields.io/badge/flutter-3.47-blue)
 
 ## What it does
 
-- **Reads any text PDF aloud** with 54 Kokoro voices across 9 languages.
+- **Reads any text PDF aloud** with 54 Kokoro voices across 9 languages, on-device.
 - **Highlights the sentence being spoken** directly on the rendered page, and
   scrolls to follow — but only when the sentence actually leaves the viewport, so
   reading along never turns into a jitter fight.
@@ -21,81 +21,53 @@ sentence, highlighting the page as it goes.
 - **Resumes where you stopped**, per document, down to the sentence.
 - Sleep timer, voice preview, light/dark theme, rendered-speech disk cache.
 
-## Requirements
+## Building
 
-To **build**: Flutter 3.47+ with Windows desktop support. Nothing else.
-
-To **run a built copy**: nothing. The speech model and a private Python runtime
-are both bundled into the app — see [Self-contained builds](#self-contained-builds).
-
-### Windows Developer Mode
-
-Flutter needs symlink support to build plugins on Windows. Enable Developer Mode
-once, then the build works:
+Flutter 3.47+. Nothing else — the speech engine is a Dart package with native
+libraries, so there is no Python, pip or system TTS involved.
 
 ```bash
-start ms-settings:developers
+flutter pub get
 ```
 
-## Running
+### Windows
 
-The model and runtime are too large for git, so fetch them once. Both scripts are
-idempotent — re-running them is a no-op:
+Fetch the voice bundle once (too large for git), then build:
 
 ```bash
 pwsh tool/fetch_models.ps1
 ```
 
 ```bash
-pwsh tool/fetch_runtime.ps1
-```
-
-Then:
-
-```bash
-flutter pub get
 flutter run -d windows
 ```
 
-## Self-contained builds
+Windows needs Developer Mode enabled for Flutter's plugin symlinks
+(`start ms-settings:developers`).
 
-`windows/CMakeLists.txt` copies both the model and the Python runtime into the
-application bundle:
-
-```
-build/windows/x64/runner/Release/
-  lumen_reader.exe
-  models/
-    kokoro-v1.0.onnx     325 MB
-    voices-v1.0.bin       28 MB
-  runtime/               144 MB   embedded Python + kokoro-onnx
-  data/flutter_assets/
-```
-
-Zip that folder and it speaks on a machine with no Python, no pip and nothing to
-download — about 500 MB all in.
-
-`tool/fetch_runtime.ps1` assembles the runtime from the official Windows
-embeddable distribution: it enables site-packages (off by default in that build),
-bootstraps pip, installs `kokoro-onnx`, then drops pip, setuptools and wheel,
-which are only needed at install time.
-
-At startup Lumen prefers `<app>/runtime/python.exe` for the interpreter and
-`<app>/models` for the weights, then falls back through `./models`, `~/.kokoro`,
-`~/models`, `~/Downloads` and finally whatever is set in **Settings**. The probe
-re-runs on every launch and whenever a saved path has gone missing, so a bundled
-copy is picked up even for someone whose settings name an older location. An
-interpreter path you typed yourself is never overwritten.
-
-CMake skips files that are already up to date, so the large payloads are copied
-once rather than on every incremental build. To bundle from elsewhere:
+### Android
 
 ```bash
-cmake -DLUMEN_MODELS_DIR=<path> -DLUMEN_RUNTIME_DIR=<path>
+flutter build apk --release --split-per-abi
 ```
 
-Either can be absent: the build still succeeds with a warning, and the app falls
-back to a system Python and a model chosen in Settings.
+Requires the Android SDK with `cmdline-tools` installed and licences accepted
+(`flutter doctor --android-licenses`). The voice bundle is **not** packed into
+the APK; the app downloads it on first launch (see below).
+
+## How the voice gets there
+
+The engine needs a directory holding `model.onnx`, `voices.bin`, `tokens.txt`,
+`espeak-ng-data/` and the lexicons — about 383 MB unpacked.
+
+| | |
+|---|---|
+| **Windows** | `windows/CMakeLists.txt` copies `models/` into the app bundle, so a built copy speaks immediately. Override with `cmake -DLUMEN_MODELS_DIR=<path>`. |
+| **Android** | No bundle ships in the APK. On first launch the app offers a one-time 333 MB download, unpacks it into app storage, and works offline from then on. |
+
+At startup Lumen probes `<app>/models`, `<app>/data/models`, `./models` and its
+own app-support folder, then falls back to whatever is set in **Settings**. The
+probe re-runs on every launch and whenever a saved folder has gone missing.
 
 ## Keyboard
 
@@ -115,30 +87,39 @@ PDF ──pdfium──> page text + per-character boxes
                       ├── ScriptBuilder: normalise, split into sentences,
                       │   group character boxes into per-line highlight rects
                       ▼
-              NarrationScript ──> Narrator ──HTTP──> Kokoro sidecar (Python)
-                      │               │                      │
-                 highlight        media_kit <──── cached WAV ┘
-                 on the page       (rate control)
+              NarrationScript ──> Narrator ──> TtsService
+                      │               │              │
+                 highlight        media_kit     engine isolate
+                 on the page     (rate control)  (sherpa_onnx + Kokoro)
+                                        ▲              │
+                                        └── cached WAV ┘
 ```
 
-**`lib/services/narration_script.dart`** is where the quality lives. pdfium hands
-back text with hard line breaks inside paragraphs, hyphenated wraps, ligature
-glyphs and page furniture. The builder normalises all of that while keeping a map
-from every output character back to its original index, so the highlight boxes
-stay pixel-correct after the text has been rewritten. It then splits on sentence
-boundaries with rules for abbreviations, initials, decimals and list markers.
-Covered by `test/narration_script_test.dart`.
+**`lib/services/narration_script.dart`** is where the reading quality lives.
+pdfium returns text with hard line breaks inside paragraphs, hyphenated wraps,
+ligature glyphs and page furniture. The builder normalises all of that while
+keeping a map from every output character back to its original index, so the
+highlight boxes stay correct after the text has been rewritten. It then splits on
+sentence boundaries with rules for abbreviations, initials, decimals and list
+markers. Covered by `test/narration_script_test.dart`.
 
-**`assets/python/tts_server.py`** is a stdlib HTTP server wrapping `kokoro-onnx`.
-The app extracts it to its support directory, spawns it, and waits for a
-`LUMEN_READY` handshake on stdout. The sidecar watches stdin for EOF, so it exits
-with the app rather than leaving a 325 MB model resident.
+**`lib/services/tts_service.dart`** owns the Kokoro model. Synthesis is a
+blocking native call of a second or two, so the model lives in a dedicated
+isolate — its handle is a raw pointer that cannot cross isolates — and requests
+are serialised through a priority queue, so whatever you are about to hear jumps
+ahead of speculative prefetch.
+
+**`lib/models/voice_table.dart`** maps voice names to speaker ids. The order is
+*almost* alphabetical, except `em_santa` sits at the end, shifting 24 voices by
+one. Every entry was confirmed by matching raw style-embedding vectors, not
+assumed — getting this wrong silently returns the wrong speaker.
 
 **`lib/playback/narrator.dart`** renders one sentence at a time with three more
 queued speculatively, plays them back-to-back, and tracks clip durations so a
 10-second rewind can walk backwards across sentence boundaries. Clips are cached
 on disk by `sha1(text) + voice`, which is why speed is deliberately *not* baked
-into synthesis.
+into synthesis. Each clip carries 350 ms of trailing silence: Kokoro trims its
+own, so without it sentences run together and the last word can be clipped.
 
 ## Testing
 
@@ -152,8 +133,9 @@ flutter test
   says so rather than failing silently.
 - Multi-column layouts follow pdfium's reading order, which is usually but not
   always correct.
-- Windows only so far. The code is platform-neutral apart from the sidecar launch;
-  macOS and Linux need `media_kit_libs_<os>_audio` added to `pubspec.yaml`, plus
-  their own bundle rules for the model and runtime.
-- A self-contained build is ~500 MB, most of it the Kokoro weights. Nothing here
-  streams the model or fetches it on first launch.
+- Unpacking the voice on Android is CPU-bound for a few minutes on first launch
+  (bzip2 in pure Dart measures ~7 MB/s on a desktop, slower on a phone).
+- Only the American English lexicon is loaded. sherpa lets the first entry win
+  for duplicated words, so loading the British one alongside it would shadow
+  every US pronunciation; accent comes from the voice embedding regardless.
+- iOS, macOS and Linux are not wired up, though every dependency supports them.
