@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/model_store.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/breakpoints.dart';
 import 'primitives.dart';
 
 /// Offers the one-time voice download, and reports on it while it runs.
@@ -23,7 +24,7 @@ class ModelSetupCard extends StatelessWidget {
         }
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          padding: EdgeInsets.fromLTRB(context.gutter, 0, context.gutter, 14),
           child: SoftPanel(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
             child: switch (models.phase) {
@@ -65,27 +66,19 @@ class _Offer extends StatelessWidget {
           style: context.texts.bodyMedium?.copyWith(color: p.inkSoft, height: 1.55),
         ),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: p.accent,
-                foregroundColor: p.accentInk,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                shape: const RoundedRectangleBorder(borderRadius: LumenRadius.brMd),
-              ),
-              onPressed: models.install,
-              icon: const Icon(Icons.download_rounded, size: 18),
-              label: const Text('Download voice'),
+        _ActionAndNote(
+          note: 'You can still open and read PDFs without it.',
+          button: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: p.accent,
+              foregroundColor: p.accentInk,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              shape: const RoundedRectangleBorder(borderRadius: LumenRadius.brMd),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'You can still open and read PDFs without it.',
-                style: context.texts.bodySmall?.copyWith(color: p.inkFaint),
-              ),
-            ),
-          ],
+            onPressed: models.install,
+            icon: const Icon(Icons.download_rounded, size: 18),
+            label: const Text('Download voice'),
+          ),
         ),
       ],
     );
@@ -193,6 +186,34 @@ class _Failed extends StatelessWidget {
           label: const Text('Try again'),
         ),
       ],
+    );
+  }
+}
+
+/// Primary action with a note beside it, stacking on a phone where there is no
+/// room for both on one line.
+class _ActionAndNote extends StatelessWidget {
+  const _ActionAndNote({required this.button, required this.note});
+
+  final Widget button;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.lumen;
+    final text = Text(
+      note,
+      style: context.texts.bodySmall?.copyWith(color: p.inkFaint),
+    );
+
+    if (context.isCompact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [button, const SizedBox(height: 10), Center(child: text)],
+      );
+    }
+    return Row(
+      children: [button, const SizedBox(width: 12), Expanded(child: text)],
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:media_kit/media_kit.dart';
 import '../../models/voice.dart';
 import '../../services/tts_service.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/breakpoints.dart';
 import 'primitives.dart';
 
 /// Voice browser with search, accent grouping and in-place preview.
@@ -81,10 +82,21 @@ class _VoicePickerDialogState extends State<_VoicePickerDialog> {
     final p = context.lumen;
     final grouped = _group(_filtered);
 
+    final compact = context.isCompact;
+
     return Dialog(
       backgroundColor: Colors.transparent,
+      // A phone gets a near full-bleed sheet; the default inset would squeeze
+      // the list into roughly 310 logical pixels.
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 40,
+        vertical: compact ? 16 : 40,
+      ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 640),
+        constraints: BoxConstraints(
+          maxWidth: 560,
+          maxHeight: compact ? double.infinity : 640,
+        ),
         child: SoftPanel(
           padding: EdgeInsets.zero,
           radius: LumenRadius.brXl,

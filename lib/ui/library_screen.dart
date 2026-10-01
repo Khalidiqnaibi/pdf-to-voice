@@ -8,6 +8,7 @@ import '../app.dart';
 import '../models/library_entry.dart';
 import '../services/tts_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/breakpoints.dart';
 import 'reader_screen.dart';
 import 'widgets/model_setup_card.dart';
 import 'widgets/primitives.dart';
@@ -110,69 +111,102 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.lumen;
     final scope = AppScope.of(context);
+    final compact = context.isCompact;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(36, 30, 36, 20),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              borderRadius: LumenRadius.brMd,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [p.accent, p.accent.withValues(alpha: 0.65)],
-              ),
+    final mark = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: compact ? 36 : 42,
+          height: compact ? 36 : 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: LumenRadius.brMd,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [p.accent, p.accent.withValues(alpha: 0.65)],
             ),
-            child: Icon(Icons.graphic_eq_rounded, color: p.accentInk, size: 22),
           ),
-          const SizedBox(width: 14),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Lumen', style: context.texts.headlineMedium),
+          child: Icon(Icons.graphic_eq_rounded, color: p.accentInk, size: compact ? 19 : 22),
+        ),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Lumen',
+              style: compact ? context.texts.headlineSmall : context.texts.headlineMedium,
+            ),
+            if (!compact)
               Text(
                 'PDFs, read aloud by Kokoro',
                 style: context.texts.bodySmall?.copyWith(color: p.inkFaint),
               ),
-            ],
-          ),
+          ],
+        ),
+      ],
+    );
+
+    final openButton = FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: p.accent,
+        foregroundColor: p.accentInk,
+        padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 20, vertical: 16),
+        shape: const RoundedRectangleBorder(borderRadius: LumenRadius.brMd),
+        textStyle: context.texts.labelLarge,
+      ),
+      onPressed: opening ? null : onOpen,
+      icon: opening
+          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+          : const Icon(Icons.add_rounded, size: 19),
+      label: const Text('Open PDF'),
+    );
+
+    final settingsButton = IconAction(
+      icon: Icons.tune_rounded,
+      tooltip: 'Settings',
+      size: context.tapTarget,
+      onPressed: () => showSettingsDialog(
+        context,
+        settings: scope.settings,
+        tts: scope.tts,
+      ),
+    );
+
+    if (compact) {
+      // Two rows: identity and status on top, the call to action beneath it at
+      // full width, where a thumb can reach it.
+      return Padding(
+        padding: EdgeInsets.fromLTRB(context.gutter, 16, context.gutter, 14),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(child: mark),
+                const _EngineBadge(compact: true),
+                settingsButton,
+              ],
+            ),
+            const SizedBox(height: 14),
+            SizedBox(width: double.infinity, child: openButton),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(context.gutter, 30, context.gutter, 20),
+      child: Row(
+        children: [
+          mark,
           const Spacer(),
           const _EngineBadge(),
           const SizedBox(width: 8),
-          IconAction(
-            icon: Icons.tune_rounded,
-            tooltip: 'Settings',
-            onPressed: () => showSettingsDialog(
-              context,
-              settings: scope.settings,
-              tts: scope.tts,
-            ),
-          ),
+          settingsButton,
           const SizedBox(width: 12),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: p.accent,
-              foregroundColor: p.accentInk,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-              shape: const RoundedRectangleBorder(borderRadius: LumenRadius.brMd),
-              textStyle: context.texts.labelLarge,
-            ),
-            onPressed: opening ? null : onOpen,
-            icon: opening
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.add_rounded, size: 19),
-            label: const Text('Open PDF'),
-          ),
+          openButton,
         ],
       ),
     );
@@ -181,7 +215,9 @@ class _Header extends StatelessWidget {
 
 /// A quiet traffic light for the Kokoro sidecar, with the failure reason on tap.
 class _EngineBadge extends StatelessWidget {
-  const _EngineBadge();
+  const _EngineBadge({this.compact = false});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -213,8 +249,10 @@ class _EngineBadge extends StatelessWidget {
                 height: 7,
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
-              const SizedBox(width: 8),
-              Text(label),
+              if (!compact) ...[
+                const SizedBox(width: 8),
+                Text(label),
+              ],
             ],
           ),
         );
@@ -234,16 +272,20 @@ class _Shelf extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Cards keep a comfortable width rather than stretching on wide screens.
-        final columns = (constraints.maxWidth / 260).floor().clamp(2, 6);
+        // Cards keep a comfortable width rather than stretching on wide
+        // screens, and never drop below two columns on a phone.
+        final compact = context.isCompact;
+        final target = compact ? 170.0 : 260.0;
+        final columns = (constraints.maxWidth / target).floor().clamp(2, 6);
+        final gutter = context.gutter;
 
         return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(36, 8, 36, 40),
+          padding: EdgeInsets.fromLTRB(gutter, 4, gutter, compact ? 28 : 40),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
-            crossAxisSpacing: 20,
-            mainAxisSpacing: 24,
-            childAspectRatio: 0.66,
+            crossAxisSpacing: compact ? 12 : 20,
+            mainAxisSpacing: compact ? 16 : 24,
+            childAspectRatio: compact ? 0.62 : 0.66,
           ),
           itemCount: entries.length,
           itemBuilder: (context, index) {
@@ -285,6 +327,7 @@ class _DocumentCardState extends State<_DocumentCard> {
       onExit: (_) => setState(() => _hovering = false),
       child: GestureDetector(
         onTap: widget.onOpen,
+        onLongPress: () => _confirmRemove(context),
         child: AnimatedContainer(
           duration: LumenMotion.quick,
           transform: Matrix4.translationValues(0, _hovering ? -4 : 0, 0),
@@ -329,7 +372,8 @@ class _DocumentCardState extends State<_DocumentCard> {
                         ),
                       ),
                     ),
-                    if (_hovering)
+                    // Hover reveals it on desktop; touch uses the long press.
+                    if (_hovering && !context.isCompact)
                       Positioned(
                         top: 6,
                         right: 6,
@@ -380,6 +424,49 @@ class _DocumentCardState extends State<_DocumentCard> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmRemove(BuildContext context) async {
+    final p = context.lumen;
+    final remove = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: SoftPanel(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: Text(
+                    widget.entry.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.texts.titleMedium,
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(Icons.delete_outline_rounded, color: p.warning),
+                  title: Text(
+                    'Remove from library',
+                    style: context.texts.bodyLarge?.copyWith(color: p.warning),
+                  ),
+                  subtitle: Text(
+                    'The file itself is left alone.',
+                    style: context.texts.bodySmall?.copyWith(color: p.inkFaint),
+                  ),
+                  onTap: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (remove ?? false) widget.onRemove();
   }
 
   static String _subtitle(LibraryEntry entry) {
@@ -443,15 +530,19 @@ class _EmptyLibrary extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = context.lumen;
 
+    final compact = context.isCompact;
+
     return Center(
-      child: ConstrainedBox(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: context.gutter),
+        child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 460),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 96,
-              height: 96,
+              width: compact ? 76 : 96,
+              height: compact ? 76 : 96,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: p.accent.withValues(alpha: 0.10),
@@ -482,6 +573,7 @@ class _EmptyLibrary extends StatelessWidget {
               label: const Text('Choose a PDF'),
             ),
           ],
+        ),
         ),
       ),
     );

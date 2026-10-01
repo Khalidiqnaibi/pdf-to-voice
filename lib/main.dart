@@ -26,9 +26,11 @@ Future<void> main() async {
     await windowManager.waitUntilReadyToShow(
       const WindowOptions(
         size: Size(1280, 860),
-        minimumSize: Size(880, 620),
+        // Low enough to exercise the compact layout: the window can be
+        // narrowed to phone width and the UI folds the same way it does there.
+        minimumSize: Size(380, 600),
         center: true,
-        title: 'Lumen Reader',
+        title: 'Lumen',
       ),
       () async {
         await windowManager.show();

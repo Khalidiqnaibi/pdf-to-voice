@@ -64,7 +64,7 @@ class LumenApp extends StatelessWidget {
         listenable: settings,
         builder: (context, _) {
           return MaterialApp(
-            title: 'Lumen Reader',
+            title: 'Lumen',
             debugShowCheckedModeBanner: false,
             themeMode: settings.themeMode,
             theme: AppTheme.build(Brightness.light),

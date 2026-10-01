@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../services/settings_store.dart';
 import '../../services/tts_service.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/breakpoints.dart';
 import 'primitives.dart';
 
 Future<void> showSettingsDialog(
@@ -69,10 +70,19 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   Widget build(BuildContext context) {
     final p = context.lumen;
 
+    final compact = context.isCompact;
+
     return Dialog(
       backgroundColor: Colors.transparent,
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 40,
+        vertical: compact ? 16 : 40,
+      ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 620, maxHeight: 720),
+        constraints: BoxConstraints(
+          maxWidth: 620,
+          maxHeight: compact ? double.infinity : 720,
+        ),
         child: SoftPanel(
           padding: EdgeInsets.zero,
           radius: LumenRadius.brXl,
@@ -377,9 +387,12 @@ class _ThemeSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        runSpacing: 10,
         children: [
-          Expanded(child: Text('Theme', style: context.texts.titleMedium)),
+          Text('Theme', style: context.texts.titleMedium),
           for (final mode in ThemeMode.values)
             Padding(
               padding: const EdgeInsets.only(left: 8),

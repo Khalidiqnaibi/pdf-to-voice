@@ -10,6 +10,7 @@ import '../services/narration_script.dart';
 import '../services/settings_store.dart';
 import '../services/tts_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/breakpoints.dart';
 import 'widgets/player_dock.dart';
 import 'widgets/primitives.dart';
 import 'widgets/sentence_highlight.dart';
@@ -289,8 +290,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
         child: Stack(
           children: [
             Positioned.fill(child: _buildViewer(p)),
-            Positioned(top: 0, left: 0, right: 0, child: _buildTopBar()),
-            Positioned(left: 0, right: 0, bottom: 0, child: _buildBottom()),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(bottom: false, child: _buildTopBar()),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(top: false, child: _buildBottom()),
+            ),
             if (_preparing)
               Positioned.fill(
                 child: ColoredBox(
@@ -377,19 +388,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   Widget _buildTopBar() {
     final p = context.lumen;
+    final compact = context.isCompact;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 0),
+      padding: EdgeInsets.fromLTRB(context.gutter, 12, context.gutter, 0),
       child: SoftPanel(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10, vertical: 6),
         child: Row(
           children: [
             IconAction(
               icon: Icons.arrow_back_rounded,
-              tooltip: 'Back to library  (Esc)',
+              tooltip: 'Back to library',
+              size: context.tapTarget,
               onPressed: () => Navigator.of(context).maybePop(),
             ),
-            const SizedBox(width: 6),
+            SizedBox(width: compact ? 2 : 6),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -399,7 +412,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     _title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: context.texts.titleMedium,
+                    style: compact ? context.texts.titleSmall : context.texts.titleMedium,
                   ),
                   Text(
                     _pageCount == 0 ? 'Opening...' : 'Page $_page of $_pageCount',
@@ -408,68 +421,86 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 ],
               ),
             ),
-            Pill(
-              tooltip: 'Start narrating from the page you are looking at',
-              onTap: _script.isEmpty ? null : _readFromCurrentPage,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(Icons.play_circle_outline_rounded, size: 15),
-                  SizedBox(width: 6),
-                  Text('Read this page'),
-                ],
+            // A phone has room for one action plus a menu; everything else
+            // folds in behind it.
+            if (compact) ...[
+              IconAction(
+                icon: Icons.play_circle_outline_rounded,
+                tooltip: 'Read this page',
+                size: context.tapTarget,
+                onPressed: _script.isEmpty ? null : _readFromCurrentPage,
               ),
-            ),
-            const SizedBox(width: 10),
-            ListenableBuilder(
-              listenable: _settings,
-              builder: (context, _) => Row(
-                children: [
-                  IconAction(
-                    icon: Icons.my_location_rounded,
-                    tooltip: _settings.autoScroll ? 'Following narration' : 'Follow narration',
-                    active: _settings.autoScroll,
-                    onPressed: () => _settings.setAutoScroll(!_settings.autoScroll),
-                  ),
-                  IconAction(
-                    icon: Icons.border_color_rounded,
-                    tooltip: _settings.highlightSentence
-                        ? 'Highlight on'
-                        : 'Highlight off',
-                    active: _settings.highlightSentence,
-                    onPressed: () =>
-                        _settings.setHighlightSentence(!_settings.highlightSentence),
-                  ),
-                  IconAction(
-                    icon: _settings.themeMode == ThemeMode.light
-                        ? Icons.light_mode_rounded
-                        : Icons.dark_mode_rounded,
-                    tooltip: 'Toggle theme',
-                    onPressed: () => _settings.setThemeMode(
-                      _settings.themeMode == ThemeMode.light
-                          ? ThemeMode.dark
-                          : ThemeMode.light,
+              _OverflowMenu(
+                settings: _settings,
+                controller: _controller,
+                onSettings: _openSettings,
+              ),
+            ] else ...[
+              Pill(
+                tooltip: 'Start narrating from the page you are looking at',
+                onTap: _script.isEmpty ? null : _readFromCurrentPage,
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.play_circle_outline_rounded, size: 15),
+                    SizedBox(width: 6),
+                    Text('Read this page'),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              ListenableBuilder(
+                listenable: _settings,
+                builder: (context, _) => Row(
+                  children: [
+                    IconAction(
+                      icon: Icons.my_location_rounded,
+                      tooltip: _settings.autoScroll
+                          ? 'Following narration'
+                          : 'Follow narration',
+                      active: _settings.autoScroll,
+                      onPressed: () => _settings.setAutoScroll(!_settings.autoScroll),
                     ),
-                  ),
-                ],
+                    IconAction(
+                      icon: Icons.border_color_rounded,
+                      tooltip: _settings.highlightSentence
+                          ? 'Highlight on'
+                          : 'Highlight off',
+                      active: _settings.highlightSentence,
+                      onPressed: () =>
+                          _settings.setHighlightSentence(!_settings.highlightSentence),
+                    ),
+                    IconAction(
+                      icon: _settings.themeMode == ThemeMode.light
+                          ? Icons.light_mode_rounded
+                          : Icons.dark_mode_rounded,
+                      tooltip: 'Toggle theme',
+                      onPressed: () => _settings.setThemeMode(
+                        _settings.themeMode == ThemeMode.light
+                            ? ThemeMode.dark
+                            : ThemeMode.light,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            IconAction(
-              icon: Icons.zoom_out_rounded,
-              tooltip: 'Zoom out',
-              onPressed: () => _controller.zoomDown(),
-            ),
-            IconAction(
-              icon: Icons.zoom_in_rounded,
-              tooltip: 'Zoom in',
-              onPressed: () => _controller.zoomUp(),
-            ),
-            IconAction(
-              icon: Icons.keyboard_rounded,
-              tooltip: 'Space play/pause  -  Left/Right sentence  -  '
-                  'Shift+Left/Right 10s  -  +/- speed',
-              onPressed: () {},
-            ),
+              IconAction(
+                icon: Icons.zoom_out_rounded,
+                tooltip: 'Zoom out',
+                onPressed: () => _controller.zoomDown(),
+              ),
+              IconAction(
+                icon: Icons.zoom_in_rounded,
+                tooltip: 'Zoom in',
+                onPressed: () => _controller.zoomUp(),
+              ),
+              IconAction(
+                icon: Icons.keyboard_rounded,
+                tooltip: 'Space play/pause  -  Left/Right sentence  -  '
+                    'Shift+Left/Right 10s  -  +/- speed',
+                onPressed: () {},
+              ),
+            ],
           ],
         ),
       ),
@@ -478,7 +509,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   Widget _buildBottom() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+      padding: EdgeInsets.fromLTRB(context.gutter, 0, context.gutter, 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -614,6 +645,116 @@ class _PreparingCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Everything the phone top bar has no room for: the follow and highlight
+/// toggles, zoom, theme and settings.
+class _OverflowMenu extends StatelessWidget {
+  const _OverflowMenu({
+    required this.settings,
+    required this.controller,
+    required this.onSettings,
+  });
+
+  final SettingsStore settings;
+  final PdfViewerController controller;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.lumen;
+
+    return ListenableBuilder(
+      listenable: settings,
+      builder: (context, _) => MenuAnchor(
+        alignmentOffset: const Offset(0, 8),
+        style: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(p.surface),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          side: WidgetStatePropertyAll(BorderSide(color: p.stroke)),
+          shape: const WidgetStatePropertyAll(
+            RoundedRectangleBorder(borderRadius: LumenRadius.brMd),
+          ),
+        ),
+        menuChildren: [
+          _check(
+            context,
+            icon: Icons.my_location_rounded,
+            label: 'Follow narration',
+            value: settings.autoScroll,
+            onTap: () => settings.setAutoScroll(!settings.autoScroll),
+          ),
+          _check(
+            context,
+            icon: Icons.border_color_rounded,
+            label: 'Highlight sentence',
+            value: settings.highlightSentence,
+            onTap: () => settings.setHighlightSentence(!settings.highlightSentence),
+          ),
+          const Divider(height: 8),
+          MenuItemButton(
+            leadingIcon: Icon(Icons.zoom_in_rounded, size: 17, color: p.inkFaint),
+            onPressed: () => controller.zoomUp(),
+            child: Text('Zoom in', style: context.texts.bodyMedium),
+          ),
+          MenuItemButton(
+            leadingIcon: Icon(Icons.zoom_out_rounded, size: 17, color: p.inkFaint),
+            onPressed: () => controller.zoomDown(),
+            child: Text('Zoom out', style: context.texts.bodyMedium),
+          ),
+          const Divider(height: 8),
+          MenuItemButton(
+            leadingIcon: Icon(
+              settings.themeMode == ThemeMode.light
+                  ? Icons.dark_mode_rounded
+                  : Icons.light_mode_rounded,
+              size: 17,
+              color: p.inkFaint,
+            ),
+            onPressed: () => settings.setThemeMode(
+              settings.themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light,
+            ),
+            child: Text(
+              settings.themeMode == ThemeMode.light ? 'Dark theme' : 'Light theme',
+              style: context.texts.bodyMedium,
+            ),
+          ),
+          MenuItemButton(
+            leadingIcon: Icon(Icons.tune_rounded, size: 17, color: p.inkFaint),
+            onPressed: onSettings,
+            child: Text('Settings', style: context.texts.bodyMedium),
+          ),
+        ],
+        builder: (context, menu, _) => IconAction(
+          icon: Icons.more_vert_rounded,
+          tooltip: 'More',
+          size: context.tapTarget,
+          onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+        ),
+      ),
+    );
+  }
+
+  Widget _check(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required bool value,
+    required VoidCallback onTap,
+  }) {
+    final p = context.lumen;
+    return MenuItemButton(
+      leadingIcon: Icon(icon, size: 17, color: value ? p.accent : p.inkFaint),
+      trailingIcon: value
+          ? Icon(Icons.check_rounded, size: 16, color: p.accent)
+          : const SizedBox(width: 16),
+      onPressed: onTap,
+      child: Text(
+        label,
+        style: context.texts.bodyMedium?.copyWith(color: value ? p.accent : p.ink),
       ),
     );
   }
